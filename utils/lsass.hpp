@@ -64,6 +64,7 @@ namespace mapper::lsass {
 		EXTERN_C NTSTATUS NTAPI NtDuplicateObject(HANDLE, HANDLE, HANDLE, PHANDLE, ACCESS_MASK, BOOLEAN, ULONG);
 	}
 
+	// speaks for itself
 	auto find_pid_by_name(const std::string& name) -> std::size_t {
 		auto hn = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 
@@ -104,6 +105,7 @@ namespace mapper::lsass {
 			TRUE);                          // bWait - Blocks until user click
 	}
 
+	// steal a handle from ()
 	auto steal_handle(const std::size_t targetProcessId) -> HANDLE {
 		NTSTATUS status;
 		ULONG handleInfoSize = 0x10000;

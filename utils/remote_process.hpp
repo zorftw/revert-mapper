@@ -11,7 +11,7 @@
 #include <fstream>
 #include <map>
 
-namespace remote {
+namespace mapper::remote{
 
 	namespace detail {
 		inline auto process = INVALID_HANDLE_VALUE;
@@ -28,7 +28,7 @@ namespace remote {
 			char name[256];
 			std::uintptr_t base;
 
-			friend bool operator<(const s_remote_module& a, const s_remote_module& b) {
+			friend auto operator<(const s_remote_module& a, const s_remote_module& b) -> const bool {
 				return a.base < b.base;
 			}
 		};
@@ -140,37 +140,6 @@ namespace remote {
 		return WriteProcessMemory(detail::process, (void*)address, buffer, size, nullptr);
 	}
 
-	// alloc memory for our DLL in x64 memory space
-	auto alloc_virtual_memory(std::size_t size) -> std::intptr_t {
-
-		int tries = 0;
-
-		auto address = VirtualAllocEx(detail::process, (void*)(std::numeric_limits<std::uint32_t>::max)(), size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-		tries++;
-
-		if (!((std::intptr_t)address > (std::numeric_limits<std::uint32_t>::max)()))
-		{
-			do {
-				address = (void*)((std::intptr_t)(std::numeric_limits<std::uint32_t>::max)() + 0x1000 * tries);
-				tries++;
-
-				address = VirtualAllocEx(detail::process, address, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-				if ((std::intptr_t)address > (std::numeric_limits<std::uint32_t>::max)())
-					return (std::intptr_t)address;
-
-				VirtualFreeEx(detail::process, address, 0, MEM_RELEASE);
-
-			} while (tries < 10);
-		}
-		else {
-			return (std::intptr_t)address;
-		}
-
-		return false;
-	}
-
 	auto get_module_cache() -> std::vector<detail::s_remote_module> {
 		if (detail::_module_cache.size() > 0)
 			return detail::_module_cache;
@@ -187,11 +156,17 @@ namespace remote {
 
 	// TODO: CACHE THIS
 	auto find_remote_export(std::string mod, std::string name, bool x86 = true) {
+		// check if we have it cached
 		auto _cache = get_module_cache();
 
 		if (!_cache.size() > 0)
+			_cache = get_remote_modules(); // else just get it and populate the cache
+
+		// check size again
+		if (!_cache.size() > 0)
 			return (std::uintptr_t)0;
 
+		// check if we have a handle
 		if (!check_process_handle())
 			return (std::uintptr_t)0;
 
@@ -322,44 +297,41 @@ namespace remote {
 		return (std::uintptr_t)0;
 	}
 
+	// alloc memory for our DLL in x64 memory space
+	auto alloc_virtual_memory(std::size_t size) -> std::intptr_t {
+
+		int tries = 0;
+
+		auto address = VirtualAllocEx(detail::process, (void*)(std::numeric_limits<std::uint32_t>::max)(), size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+		tries++;
+
+		if (!((std::intptr_t)address > (std::numeric_limits<std::uint32_t>::max)()))
+		{
+			do {
+				address = (void*)((std::intptr_t)(std::numeric_limits<std::uint32_t>::max)() + 0x1000 * tries);
+				tries++;
+
+				address = VirtualAllocEx(detail::process, address, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+				if ((std::intptr_t)address > (std::numeric_limits<std::uint32_t>::max)())
+					return (std::intptr_t)address;
+
+				VirtualFreeEx(detail::process, address, 0, MEM_RELEASE);
+
+			} while (tries < 10);
+		}
+		else {
+			return (std::intptr_t)address;
+		}
+
+		return false;
+	}
+
 	std::vector<detail::s_remote_module> get_remote_modules() {
 		if (!check_process_handle())
 			return std::vector<detail::s_remote_module>{0};
 
-		/*
-		auto data = read_peb_buffer();
-
-		if (data.size() == 0)
-			return std::vector<detail::s_remote_module>{};
-
-		std::vector<detail::s_remote_module> res;
-
-		PEB* peb = reinterpret_cast<PEB*>(data.data());
-		auto peb_ldr_data = read<PEB_LDR_DATA>(reinterpret_cast<std::uint64_t>(peb->Ldr));
-		PEB_LDR_DATA* peb_ldr = reinterpret_cast<PPEB_LDR_DATA>(peb_ldr_data.data());
-		PEB_LDR_DATA* loader_data = (PEB_LDR_DATA*)peb->Ldr;
-		
-		const uintptr_t address_to_head = (std::uintptr_t)(((std::uintptr_t)peb_ldr->InMemoryOrderModuleList.Flink - (std::uintptr_t)peb_ldr) + peb->Ldr);
-
-		std::uint64_t address = (std::uint64_t)peb_ldr->InMemoryOrderModuleList.Flink;
-
-		do {
-			auto entry = read<LDR_DATA_TABLE_ENTRY>(address);
-			LDR_DATA_TABLE_ENTRY* ldr_table_entry = reinterpret_cast<LDR_DATA_TABLE_ENTRY*>(entry.data());	
-
-			auto unicode_name = read<std::uint8_t>((std::uint64_t)ldr_table_entry->FullDllName.Buffer, (std::size_t)ldr_table_entry->FullDllName.MaximumLength);
-			std::string name = convert_unicode_to_utf8(unicode_name);
-
-			detail::s_remote_module mod = {};
-			mod.name = name;
-			mod.base = (std::uintptr_t)ldr_table_entry->DllBase;
-			res.push_back(mod);
-
-			ldr_table_entry = (LDR_DATA_TABLE_ENTRY*)read<LDR_DATA_TABLE_ENTRY>((std::uint64_t)ldr_table_entry->InMemoryOrderLinks.Flink).data();
-			address = (uintptr_t)ldr_table_entry->InMemoryOrderLinks.Flink;
-
-		} while (address != address_to_head);
-		*/
 		HMODULE hMods[1024];
 		DWORD cbNeeded;
 		unsigned int i;
@@ -373,7 +345,6 @@ namespace remote {
 				TCHAR szModName[MAX_PATH];
 
 				// Get the full path to the module's file.
-
 				if (GetModuleFileNameEx(detail::process, hMods[i], szModName,
 					sizeof(szModName) / sizeof(TCHAR)))
 				{
