@@ -148,6 +148,9 @@
     <ClInclude Include="utils\mapper.hpp" />
     <ClInclude Include="utils\remote_process.hpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
